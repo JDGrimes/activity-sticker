@@ -24,7 +24,7 @@ if ( !class_exists( 'ActivitySticker' ) ) :
  * @since Activity Sticker 1.0-beta1
  */
 final class ActivitySticker {
-	
+
 	public $plugin_url;
 	public $plugin_dir;
 	public $version;
@@ -38,7 +38,7 @@ final class ActivitySticker {
 		$this->setup_actions();
 		$this->setup_filters();
 	}
-	
+
 	function setup_globals() {
 		$this->version     = '1.0-beta3';
 		$this->plugin_dir  = plugin_dir_path( __FILE__ );
@@ -47,18 +47,18 @@ final class ActivitySticker {
 		$this->plugin_css  = trailingslashit( $this->plugin_url . 'css' );
 		$this->domain      = 'activity-sticker';
 	}
-	
+
 	function includes() {
 		$includes_dir = trailingslashit( $this->plugin_dir . 'includes' );
-		
+
 		require( $includes_dir . 'functions.php' );
 		require( $includes_dir . 'filters.php' );
 	}
-	
+
 	function setup_actions() {
-		
+
 		if( is_admin() ) {
-			
+
 			add_action( 'bp_admin_menu',                    array( $this, 'admin_menu'            )        );
 			add_action( 'bp_admin_head',                    array( $this, 'admin_head'            )        );
 			add_action( 'bp_activity_admin_load',           array( $this, 'admin_enqueue_scripts' ), 10    );
@@ -66,24 +66,33 @@ final class ActivitySticker {
 			add_action( 'bp_activity_admin_edit_after',     array( $this, 'update_sticky'         ), 10, 2 );
 			add_action( 'bp_activity_list_table_get_views', array( $this, 'sticky_admin_link'     )        );
 			add_action( 'bp_activity_admin_index',          array( $this, 'admin_prepend_sticky'  )        );
-			
+
 		} else {
 			add_action( 'bp_before_directory_activity_list', array( $this, 'front_prepend_sticky'  )       );
 			add_action( 'bp_actions',                        array( $this, 'front_enqueue_scripts' )       );
 		}
-		
+
 		// if the activity is deleted from back end or front end we need to eventually delete the sticky
 		add_action( 'bp_before_activity_delete', array( $this, 'delete_sticky' ), 10, 1 );
 		// loads the languages..
 		add_action( 'bp_init', array( $this, 'load_textdomain' ), 6 );
 	}
-	
+
 	function setup_filters() {
 		//let's put the 'sticky_update' type out of the loop
-		add_filter( 'bp_activity_get_user_join_filter', array( $this, 'filter_activity_select' ), 10, 6 );
+		add_filter( 'bp_activity_get_where_conditions', array( $this, 'filter_activity_where_conditions' ) );
 		add_filter( 'bp_activity_total_activities_sql', array( $this, 'filter_activity_count' ), 10, 3 );
 	}
-	
+
+	function filter_activity_where_conditions( $where_conditions ) {
+
+		if ( activitysticker_maybe_filter() ) {
+			$where_conditions[] = "a.type != 'sticky_update'";
+		}
+
+		return $where_conditions;
+	}
+
 	function filter_activity_select( $request_sql, $select_sql, $from_sql, $where_sql, $sort, $pag_sql = 0 ) {
 		if( !activitysticker_maybe_filter() )
 			return $request_sql;
@@ -101,7 +110,7 @@ final class ActivitySticker {
 
 		return $request_sql;
 	}
-	
+
 	function filter_activity_count( $request_sql, $where_sql, $sort ) {
 		if( !activitysticker_maybe_filter() )
 			return $request_sql;
@@ -115,84 +124,84 @@ final class ActivitySticker {
 
 		return $request_sql;
 	}
-	
+
 	function get_sticky() {
 		// let's get the sticky update
 		$sticky_update = activitysticker_get_sticky_update();
-		
+
 		return $sticky_update;
 	}
-	
+
 	function admin_menu() {
-		$hook = add_submenu_page( 
-			'bp-activity', 
-			'New Sticky Activity', 
-			'New Sticky Activity', 
-			'manage_options', 
-			'sticky-activity', 
+		$hook = add_submenu_page(
+			'bp-activity',
+			'New Sticky Activity',
+			'New Sticky Activity',
+			'manage_options',
+			'sticky-activity',
 			array( $this, 'sticky_editor' ) );
 
 		add_action( "load-$hook", array( $this, 'admin_load' ) );
 	}
-	
+
 	function admin_head() {
 		remove_submenu_page( 'bp-activity', 'sticky-activity'   );
 		remove_submenu_page( 'bp-activity', 'bp-activity'   );
 	}
-	
+
 	function admin_enqueue_scripts() {
 		wp_enqueue_style(  'activity-sticker-css', $this->plugin_css . 'activity-sticker.css', false, $this->version );
 		wp_enqueue_script( 'activity-sticker-js', $this->plugin_js . 'activity-sticker.js', array( 'jquery'), $this->version );
 	}
-	
+
 	function add_sticky_type( $doaction ) {
 		$bp = buddypress();
-		
+
 		if( in_array( $doaction, array( 'edit', 'save' ) ) ) {
 			$activity_id = intval( $_REQUEST['aid'] );
-			
+
 			if( activitysticker_is_stickable( $activity_id ) )
 				$bp->activity->actions->activity->sticky_update = array( 'key' => 'sticky_update', 'value' => __( 'Stick to top', 'activity-sticker' ) );
 		}
 	}
-	
+
 	function update_sticky( $activity, $error = false ) {
 		if( empty( $activity ) )
 			return;
-			
+
 		activitysticker_maybe_update_sticky( $activity );
 	}
-	
+
 	function delete_sticky( $args ) {
-		
+
 		$activity_id = $args['id'];
-			
+
 		if( empty( $activity_id ) )
 			return;
-			
+
 		activitysticker_maybe_delete_sticky( $activity_id );
 	}
-	
+
 	function admin_load() {
-		
+
 		$action = ! empty( $_REQUEST['action'] ) ? $_REQUEST['action'] : '';
 		$redirect_error = remove_query_arg( array( 'action', 'error' ), $_SERVER['REQUEST_URI'] );
 		$redirect_success = bp_get_admin_url( 'admin.php?page=bp-activity' );
 
 		if( "save" == $action ) {
-			
+
 			check_admin_referer( 'stick-activity-new' );
-			
+
 			$content = apply_filters( 'bp_activity_post_update_content', $_POST['activitysticker-content'] );
-			
+
 			if( empty( $content ) ) {
 				$redirect_error = add_query_arg( 'error', '1', $redirect_error );
 				wp_redirect( apply_filters( 'activitysticker_admin_error_redirect', $redirect_error ) );
 				exit;
 			}
-			
+
 			activitysticker_set_sticky_update( $content, $redirect_error, $redirect_success );
-				
+
 		} elseif( "unstick" == $action ) {
 
 			check_admin_referer( 'unstick-activity_' . $_REQUEST['aid'] );
@@ -209,9 +218,9 @@ final class ActivitySticker {
 			wp_enqueue_script( 'dashboard' );
 			wp_enqueue_script( 'comment' );
 		}
-		
+
 	}
-	
+
 	function metabox_save( $sticky_item = '' ) {
 		?>
 		<div class="submitbox" id="submitcomment">
@@ -226,7 +235,7 @@ final class ActivitySticker {
 		</div><!-- #submitcomment -->
 		<?php
 	}
-	
+
 	function sticky_editor() {
 		$content = !empty( $_POST['activitysticker-content'] ) ? apply_filters( 'bp_activity_post_update_content', $_POST['activitysticker-content'] ) : false ;
 		// Construct URL for form
@@ -236,7 +245,7 @@ final class ActivitySticker {
 		<div class="wrap">
 			<?php screen_icon( 'buddypress-activity' ); ?>
 			<h2><?php _e( 'Adding a sticky Activity', 'activity-sticker' ) ?></h2>
-			
+
 			<?php do_action( 'activitysticker_message' );?>
 
 			<form action="<?php echo esc_attr( $form_url ); ?>" id="activitysticker-sticky-form" method="post">
@@ -268,31 +277,31 @@ final class ActivitySticker {
 		</div>
 		<?php
 	}
-	
+
 	function sticky_admin_link() {
 		?>
 		<li>| <a href="<?php echo bp_get_admin_url( 'admin.php?page=sticky-activity' );?>"><?php _e( 'New Sticky', 'activity-sticker' );?></a></li>
 		<?php
 	}
-	
+
 	function admin_prepend_sticky() {
 		$sticky_update = $this->get_sticky();
-		
+
 		activitysticker_admin_output_sticky( $sticky_update );
 	}
-	
-	function front_prepend_sticky() {		
+
+	function front_prepend_sticky() {
 		$sticky_update = $this->get_sticky();
-		
+
 		activitysticker_front_output_sticky( $sticky_update );
 	}
-	
+
 	function front_enqueue_scripts() {
 		$file = 'css/activity-sticker.css';
-		
+
 		// Check child theme
 		if ( file_exists( trailingslashit( get_stylesheet_directory() ) . $file ) ) {
-			$location = trailingslashit( get_stylesheet_directory_uri() ) . $file ; 
+			$location = trailingslashit( get_stylesheet_directory_uri() ) . $file ;
 			$handle   = 'activity-sticker-child-css';
 
 		// Check parent theme
@@ -305,13 +314,13 @@ final class ActivitySticker {
 			$location = $this->plugin_css . 'activity-sticker.css';
 			$handle   = 'activity-sticker-css';
 		}
-		
+
 		wp_enqueue_style(  $handle, $location, false, $this->version );
 
 		if( bp_is_activity_component() && !bp_displayed_user_id() )
 			wp_enqueue_script( 'activity-sticker-js', $this->plugin_js . 'activity-sticker.js', array( 'jquery'), $this->version );
 	}
-	
+
 	function load_textdomain() {
 		// try to get locale
 		$locale = apply_filters( 'activitysticker_load_textdomain_get_locale', get_locale() );
@@ -328,7 +337,7 @@ final class ActivitySticker {
 			}
 		}
 	}
-	
+
 }
 
 function activitysticker() {
